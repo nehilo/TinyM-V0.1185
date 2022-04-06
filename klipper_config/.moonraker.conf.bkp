@@ -33,3 +33,10 @@ trusted_clients:
 type: web
 repo: meteyou/mainsail
 path: ~/mainsail
+
+[update_manager client frame_expansion]
+type: git_repo
+path: /home/pi/klipper_frame_expansion_comp
+primary_branch: main
+origin: https://github.com/alchemyEngine/klipper_frame_expansion_comp.git
+install_script: install.sh
