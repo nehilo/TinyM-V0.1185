@@ -53,7 +53,7 @@ push_config(){
   cd $config_folder
   git pull
   git add .
-  current_date=$(date)
+  current_date=$(date +"%Y-%m-%d")
   git commit -m "$current_date" -m "$m1" -m "$m2" -m "$m3" -m "$m4"
   git push
 }
