@@ -1,11 +1,8 @@
 [server]
 host = 0.0.0.0
 port = 7125
-enable_debug_logging = False
-
-[file_manager]
-config_path = ~/klipper_config
-log_path = ~/klipper_logs
+max_upload_size = 1024
+klippy_uds_address = /tmp/klippy_uds
 
 [authorization]
 cors_domains = 
@@ -22,15 +19,31 @@ trusted_clients =
 	FE80::/10
 	::1/128
 
+[file_manager]
+queue_gcode_uploads = False
+enable_object_processing = False
+enable_inotify_warnings = True
+
 [octoprint_compat]
 
 [history]
 
 [update_manager]
+channel = dev
+refresh_interval = 168
+enable_system_updates = False
+
+[update_manager KlipperScreen]
+type = git_repo
+path = /home/mks/KlipperScreen
+origin = https://github.com/jordanruthe/KlipperScreen.git
+env = /home/mks/.KlipperScreen-env/bin/python
+requirements = scripts/KlipperScreen-requirements.txt
+install_script = scripts/KlipperScreen-install.sh
 
 [update_manager mainsail]
 type = web
-channel = beta
+channel = stable
 repo = mainsail-crew/mainsail
 path = ~/mainsail
 
