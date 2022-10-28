@@ -1,106 +1,164 @@
 #!/bin/bash
+###################################
+###### GRAPH PLOTTING SCRIPT ######
+###################################
+# Written by Frix_x#0161 #
+# @version: 1.3
 
-# Copyright (C) 2021 Stephan Wendel <me@stephanwe.de>
-#
-# This file may be distributed under the terms of the GNU GPLv3 license
+# CHANGELOG:
+#   v1.3: some documentation improvement regarding the line endings that needs to be LF for this file
+#   v1.2: added the movement name to be transfered to the Python script in vibration calibration (to print it on the result graphs)
+#   v1.1: multiple fixes and tweaks (mainly to avoid having empty files read by the python scripts after the mv command)
+#   v1.0: first version of the script based on a Zellneralex script
 
-#####################################################################
-### Please set the paths accordingly.                             ###
-#####################################################################
-### Path to your config folder where you want to store your input shaper files
-IS_FOLDER=~/klipper_config/input_shaper
-### number of results you want to keep
-STORE_RESULTS=5
+# Installation:
+#   1. Copy this file somewhere in your config folder and edit the parameters below if needed
+#      Note: If using Windows to do the copy/paste, be careful with the line endings for this file: LF (or \n) is mandatory !!! No \r should be
+#            present in the file as it could lead to some errors like "\r : unknown command" when running the script. If you're not confident
+#            regarding your text editor behavior, the best way is to directly download the file on the pi by using for example wget:
+#            type 'wget -P /home/pi/klipper_config/scripts https://raw.githubusercontent.com/Frix-x/klipper-voron-V2/main/scripts/plot_graphs.sh'
+#   2. Make it executable using SSH: type 'chmod +x /home/pi/klipper_config/scripts/plot_graphs.sh' (adjust the path if needed).
+#   3. Be sure to have the gcode_shell_command.py Klipper extension installed (easiest way to install it is to use KIAUH in the Advanced section)
+#   4. Create a gcode_shell_command to be able to start it from a macro (see my shell_commands.cfg file)
+
+# Usage:
+#   This script was designed to be used with gcode_shell_commands. Use it to call it.
+#   Parameters availables:
+#      SHAPER      - To generate input shaper diagrams after calling the Klipper TEST_RESONANCES AXIS=X/Y
+#      BELTS       - To generate belts diagrams after calling the Klipper TEST_RESONANCES AXIS=1,(-)1 OUTPUT=raw_data
+#      VIBRATIONS  - To generate vibration diagram after calling the custom (Frix_x#0161) VIBRATIONS_CALIBRATION macro
+
+
+#################################################################################################################
+RESULTS_FOLDER=~/klipper_config/input_shaper # Path to the folder where storing the results files
+SCRIPTS_FOLDER=~/klipper_config/scripts # Path to the folder where the graph_vibrations.py is located
+KLIPPER_FOLDER=~/klipper # Path of the klipper main folder
+STORE_RESULTS=3 # Number of results to keep (older files are automatically cleaned). 0 to keep them indefinitely
+#################################################################################################################
+
 
 #####################################################################
 ################ !!! DO NOT EDIT BELOW THIS LINE !!! ################
 #####################################################################
-function arg_parse {
-  case ${1} in
-    SHAPER|shaper)
-      plot_shaper_graph
-    ;;
-    BELT|belt)
-      plot_belt_graph
-    ;;
-    *)
-      echo -e "\nUsage:"
-      echo -e "\t${0} SHAPER|BELT"
-      echo -e "\t\tSHAPER\tGenerate Input Shaper Diagram"
-      echo -e "\t\tBELT\tGenerate Belt Tension Diagram\n"
-      exit 1
-  esac
+
+function plot_shaper_graph {
+  local generator filename newfilename date axis
+  generator="${KLIPPER_FOLDER}/scripts/calibrate_shaper.py"
+  
+  while read filename; do
+    newfilename="$(echo ${filename} | sed -e "s/\\/tmp\///")"
+    date="$(basename "${newfilename}" | cut -d '.' -f1 | awk -F'_' '{print $3"_"$4}')"
+    axis="$(basename "${newfilename}" | cut -d '_' -f2)"
+    mv "${filename}" "${isf}"/inputshaper/"${newfilename}"
+    
+    sync && sleep 2
+    "${generator}" "${isf}"/inputshaper/"${newfilename}" -o "${isf}"/inputshaper/resonances_"${axis}"_"${date}".png
+  done <<< "$(find /tmp -type f -name "resonances_*.csv" 2>&1 | grep -v "Permission")"
 }
 
-function generate_folder {
-  if [ ! -d "${IS_FOLDER}" ]; then
-    mkdir -p "${IS_FOLDER}"
+function plot_belts_graph {
+  local date_ext generator filename belt
+  date_ext="$(date +%Y%m%d_%H%M%S)"
+  generator="${KLIPPER_FOLDER}/scripts/graph_accelerometer.py"
+  
+  while read filename; do
+    belt="$(basename "${filename}" | cut -d '_' -f4 | cut -d '.' -f1 | sed -e 's/\(.*\)/\U\1/')"
+    mv "${filename}" "${isf}"/belts/belt_"${date_ext}"_"${belt}".csv
+  done <<< "$(find /tmp -type f -name "raw_data_axis*.csv" 2>&1 | grep -v "Permission")"
+  
+  sync && sleep 2
+  "${generator}" -c "${isf}"/belts/belt_"${date_ext}"_*.csv -o "${isf}"/belts/belts_"${date_ext}".png
+}
+
+function plot_vibr_graph {
+  local date_ext generator filename newfilename
+  date_ext="$(date +%Y%m%d_%H%M%S)"
+  generator="${SCRIPTS_FOLDER}/graph_vibrations.py"
+  
+  while read filename; do
+    newfilename="$(echo ${filename} | sed -e "s/\\/tmp\/adxl345/vibr_${date_ext}/")"
+    mv "${filename}" "${isf}"/vibrations/"${newfilename}"
+  done <<< "$(find /tmp -type f -name "adxl345-*.csv" 2>&1 | grep -v "Permission")"
+  
+  sync && sleep 2
+  "${generator}" "${isf}"/vibrations/vibr_"${date_ext}"*.csv -o "${isf}"/vibrations/vibrations_"${date_ext}".png -a "$1"
+  
+  tar cfz "${isf}"/vibrations/vibrations_"${date_ext}".tar.gz "${isf}"/vibrations/vibr_"${date_ext}"*.csv
+  rm "${isf}"/vibrations/vibr_"${date_ext}"*.csv
+}
+
+function clean_files {
+  local filename keep1 keep2 old csv date
+  keep1=$(( ${STORE_RESULTS} + 1 ))
+  keep2=$(( ${STORE_RESULTS} * 2 + 1))
+
+  while read filename; do
+    if [ ! -z "${filename}" ]; then
+      old+=("${filename}")
+      csv="$(basename "${filename}" | cut -d '.' -f1)"
+      old+=("${isf}"/inputshaper/"${csv}".csv)
+    fi
+  done <<< "$(find "${isf}"/inputshaper/ -type f -name '*.png' -printf '%T@ %p\n' | sort -k 1 -n -r | sed 's/^[^ ]* //' | tail -n +"${keep2}")"
+  
+  while read filename; do
+    if [ ! -z "${filename}" ]; then
+      old+=("${filename}")
+      date="$(basename "${filename}" | cut -d '.' -f1 | awk -F'_' '{print $2"_"$3}')"
+      old+=("${isf}"/belts/belt_"${date}"_A.csv)
+      old+=("${isf}"/belts/belt_"${date}"_B.csv)
+    fi
+  done <<< "$(find "${isf}"/belts/ -type f -name '*.png' -printf '%T@ %p\n' | sort -k 1 -n -r | sed 's/^[^ ]* //' | tail -n +"${keep1}")"
+
+  while read filename; do
+    if [ ! -z "${filename}" ]; then
+      old+=("${filename}")
+      csv="$(basename "${filename}" | cut -d '.' -f1)"
+      old+=("${isf}"/vibrations/"${csv}".tar.gz)
+    fi
+  done <<< "$(find "${isf}"/vibrations/ -type f -name '*.png' -printf '%T@ %p\n' | sort -k 1 -n -r | sed 's/^[^ ]* //' | tail -n +"${keep1}")"
+
+  if [ "${#old[@]}" -ne 0 -a "${STORE_RESULTS}" -ne 0 ]; then
+    for rmv in "${old[@]}"; do
+      rm "${rmv}"
+    done
   fi
 }
 
-function plot_shaper_graph {
-  local axis date file isf generator
-  axis=(x y)
-  generator="${HOME}/klipper/scripts/calibrate_shaper.py"
-  isf="${IS_FOLDER//\~/${HOME}}"
-  for s in "${axis[@]}"; do
-  #shellcheck disable=SC2012
-    file="$(ls -tr /tmp/resonances_"${s}"_* | sort -nr | head -1)"
-    date="$(basename "${file}" | cut -d '.' -f1 | awk -F'_' '{print $3"_"$4}')"
-  echo "Generate Graph for ${s} axis ..."
-  "${generator}" "${file}" -o "${isf}"/resonances_"${s}"_"${date}".png
-  mv "${file}" "${isf}"/
-  done
-}
+#############################
+### MAIN ####################
+#############################
 
-function plot_belt_graph {
-  local belts csv date date_ext file isf generator src
-  belts=(a b)
-  date_ext="$(date +%Y%m%d_%H%M%S)"
-  generator="${HOME}/klipper/scripts/graph_accelerometer.py"
-  isf="${IS_FOLDER//\~/${HOME}}"
-  #shellcheck disable=SC2012
-  for i in "${belts[@]}"; do
-    csv="$(/usr/bin/ls -tr /tmp/raw_data_axis*"${i}"* | sort -nr | awk 'NR==1')"
-    mv "${csv}" /tmp/raw_data_belt_"$i"_"${date_ext}".csv
-    src+=("/tmp/raw_data_belt_${i}_${date_ext}.csv")
-  done
-    echo "Generate Graph for belts ..."
-    "${generator}" -c "${src[@]}" -o "${isf}"/resonances_belts_"${date_ext}".png
-  for f in "${src[@]}"; do
-    mv "${f}" "${isf}"/
-  done
-}
+if [ ! -d "${RESULTS_FOLDER}/inputshaper" ]; then
+  mkdir -p "${RESULTS_FOLDER}/inputshaper"
+fi
+if [ ! -d "${RESULTS_FOLDER}/belts" ]; then
+  mkdir -p "${RESULTS_FOLDER}/belts"
+fi
+if [ ! -d "${RESULTS_FOLDER}/vibrations" ]; then
+  mkdir -p "${RESULTS_FOLDER}/vibrations"
+fi
 
-function remove_files {
-  local isf axis old
-  axis=(x y belts)
-  belts=(a b)
-  ext=(.csv .png)
-  isf="${IS_FOLDER//\~/${HOME}}"
-  pushd "${isf}" &> /dev/null || exit 1
-  for e in "${ext[@]}"; do
-    for i in "${axis[@]}"; do
-      # shellcheck disable=SC2012
-      for f in $(/usr/bin/ls -tr resonances_"${i}"*"${e}" 2> /dev/null | sort -nr | awk 'NR>'${STORE_RESULTS}''); do
-        old+=("${f}")
-      done
-    done
-    for j in "${belts[@]}"; do
-      for b in $(/usr/bin/ls -tr raw_data_belt_"${j}"*"${e}" 2> /dev/null | sort -nr | awk 'NR>'${STORE_RESULTS}''); do
-        old+=("${b}")
-      done
-    done
-  done
-    if [ "${#old[@]}" -ne 0 ]; then
-      for rmv in "${old[@]}"; do
-        rm "${rmv}"
-      done
-    fi
-  popd &> /dev/null || exit 1
-}
+isf="${RESULTS_FOLDER//\~/${HOME}}"
 
-### MAIN
-generate_folder
-arg_parse "${@}"
-remove_files
+case ${1} in
+  SHAPER|shaper)
+    plot_shaper_graph
+  ;;
+  BELTS|belts)
+    plot_belts_graph
+  ;;
+  VIBRATIONS|vibrations)
+    plot_vibr_graph ${2}
+  ;;
+  *)
+  echo -e "\nUsage:"
+  echo -e "\t${0} SHAPER, BELTS or VIBRATIONS"
+  echo -e "\t\tSHAPER\tGenerate input shaper diagram"
+  echo -e "\t\tBELT\tGenerate belt tension diagram"
+  echo -e "\t\tVIBRATIONS axis-name\tGenerate vibration response diagram\n"
+  exit 1
+esac
+
+clean_files
+
+echo "Graphs created. You will find the results in ${isf}"
