@@ -31,7 +31,7 @@
 
 #################################################################################################################
 RESULTS_FOLDER=~/klipper_config/input_shaper # Path to the folder where storing the results files
-SCRIPTS_FOLDER=~/klipper/scripts # Path to the folder where the graph_vibrations.py is located
+SCRIPTS_FOLDER=~/klipper_config/script # Path to the folder where the graph_vibrations.py is located
 KLIPPER_FOLDER=~/klipper # Path of the klipper main folder
 STORE_RESULTS=3 # Number of results to keep (older files are automatically cleaned). 0 to keep them indefinitely
 #################################################################################################################
@@ -43,7 +43,7 @@ STORE_RESULTS=3 # Number of results to keep (older files are automatically clean
 
 function plot_shaper_graph {
   local generator filename newfilename date axis
-  generator="${HOME}/klipper/scripts/calibrate_shaper.py"
+  generator="${KLIPPER_FOLDER}/scripts/calibrate_shaper.py"
   
   while read filename; do
     newfilename="$(echo ${filename} | sed -e "s/\\/tmp\///")"
@@ -59,7 +59,7 @@ function plot_shaper_graph {
 function plot_belts_graph {
   local date_ext generator filename belt
   date_ext="$(date +%Y%m%d_%H%M%S)"
-  generator="${HOME}/klipper/scripts/graph_accelerometer.py"
+  generator="${KLIPPER_FOLDER}/scripts/graph_accelerometer.py"
   
   while read filename; do
     belt="$(basename "${filename}" | cut -d '_' -f4 | cut -d '.' -f1 | sed -e 's/\(.*\)/\U\1/')"
